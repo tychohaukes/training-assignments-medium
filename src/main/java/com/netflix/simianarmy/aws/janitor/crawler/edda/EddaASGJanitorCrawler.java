@@ -158,23 +158,22 @@ public class EddaASGJanitorCrawler implements JanitorCrawler {
         Map<String, Long> lcNameToCreationTime = getLaunchConfigCreationTimes(region);
         List<Resource> resources = Lists.newArrayList();
         for (Iterator<JsonNode> it = jsonNode.getElements(); it.hasNext();) {
-            resources.add(parseJsonElementToresource(region, it.next(), lcNameToCreationTime));
+            resources.add(parseJsonElementToresource(new newObject(region, it.next()), lcNameToCreationTime));
         }
         return resources;
     }
 
-    private Resource parseJsonElementToresource(String region, JsonNode jsonNode
-            , Map<String, Long> lcNameToCreationTime) {
-        Validate.notNull(jsonNode);
+    private Resource parseJsonElementToresource(newObject ob, Map<String, Long> lcNameToCreationTime) {
+        Validate.notNull(ob.getJsonNode());
 
-        String asgName = jsonNode.get("autoScalingGroupName").getTextValue();
-        long createdTime = jsonNode.get("createdTime").getLongValue();
+        String asgName = ob.getJsonNode().get("autoScalingGroupName").getTextValue();
+        long createdTime = ob.getJsonNode().get("createdTime").getLongValue();
 
-        Resource resource = new AWSResource().withId(asgName).withRegion(region)
+        Resource resource = new AWSResource().withId(asgName).withRegion(ob.getRegion())
                 .withResourceType(AWSResourceType.ASG)
                 .withLaunchTime(new Date(createdTime));
 
-        JsonNode tags = jsonNode.get("tags");
+        JsonNode tags = ob.getJsonNode().get("tags");
         if (tags == null || !tags.isArray() || tags.size() == 0) {
             LOGGER.debug(String.format("No tags is found for %s", resource.getId()));
         } else {
@@ -185,31 +184,31 @@ public class EddaASGJanitorCrawler implements JanitorCrawler {
                 resource.setTag(key, value);
             }
         }
-
+                
         String owner = getOwnerEmailForResource(resource);
         if (owner != null) {
             resource.setOwnerEmail(owner);
         }
-        JsonNode maxSize = jsonNode.get("maxSize");
+        JsonNode maxSize = ob.getJsonNode().get("maxSize");
         if (maxSize != null) {
             resource.setAdditionalField(ASG_FIELD_MAX_SIZE, String.valueOf(maxSize.getIntValue()));
         }
         // Adds instances and ELBs as additional fields.
-        JsonNode instances = jsonNode.get("instances");
+        JsonNode instances = ob.getJsonNode().get("instances");
         resource.setDescription(String.format("%d instances", instances.size()));
         List<String> instanceIds = Lists.newArrayList();
         for (Iterator<JsonNode> it = instances.getElements(); it.hasNext();) {
             instanceIds.add(it.next().get("instanceId").getTextValue());
         }
         resource.setAdditionalField(ASG_FIELD_INSTANCES, StringUtils.join(instanceIds, ","));
-        JsonNode elbs = jsonNode.get("loadBalancerNames");
+        JsonNode elbs = ob.getJsonNode().get("loadBalancerNames");
         List<String> elbNames = Lists.newArrayList();
         for (Iterator<JsonNode> it = elbs.getElements(); it.hasNext();) {
             elbNames.add(it.next().getTextValue());
         }
         resource.setAdditionalField(ASG_FIELD_ELBS, StringUtils.join(elbNames, ","));
 
-        JsonNode lc = jsonNode.get("launchConfigurationName");
+        JsonNode lc = ob.getJsonNode().get("launchConfigurationName");
         if (lc != null) {
             String lcName = lc.getTextValue();
             Long lcCreationTime = lcNameToCreationTime.get(lcName);
@@ -221,7 +220,7 @@ public class EddaASGJanitorCrawler implements JanitorCrawler {
             }
         }
         // sets the field for the time when the ASG's traffic is suspended from ELB
-        JsonNode suspendedProcesses = jsonNode.get("suspendedProcesses");
+        JsonNode suspendedProcesses = ob.getJsonNode().get("suspendedProcesses");
         for (Iterator<JsonNode> it = suspendedProcesses.getElements(); it.hasNext();) {
             JsonNode sp = it.next();
             if ("AddToLoadBalancer".equals(sp.get("processName").getTextValue())) {
@@ -234,13 +233,14 @@ public class EddaASGJanitorCrawler implements JanitorCrawler {
                 }
             }
         }
-        Long lastChangeTime = regionToAsgToLastChangeTime.get(region).get(asgName);
+        Long lastChangeTime = regionToAsgToLastChangeTime.get(ob.getRegion()).get(asgName);
         if (lastChangeTime != null) {
             resource.setAdditionalField(ASG_FIELD_LAST_CHANGE_TIME, String.valueOf(lastChangeTime));
         }
         return resource;
 
     }
+
 
     private Map<String, Long> getLaunchConfigCreationTimes(String region) {
         LOGGER.info(String.format("Getting launch configuration creation times in region %s", region));
